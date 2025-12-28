@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: moba_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: moba_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: moba_bot_app
+    restart: always
+    depends_on:
+      - db
+    environment:
+      BOT_TOKEN: "7956067295:AAFiRbObm1jzuNJ0kXtwbvI97zuPArZMb90"
+      DB_DSN: "host=db user=myuser password=mypassword dbname=moba_db port=5432 sslmode=disable"
+
+volumes:
+  pg_data:
