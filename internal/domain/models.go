@@ -8,6 +8,7 @@ import (
 
 const (
 	StateIdle            = ""
+	StateWaitingNickname = "waiting_nickname"
 	StateWaitingGameID   = "waiting_game_id"
 	StateWaitingZoneID   = "waiting_zone_id"
 	StateWaitingStars    = "waiting_stars"

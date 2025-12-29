@@ -35,6 +35,11 @@ func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
 	player, _ := uc.playerRepo.GetByTelegramID(tgID)
 
 	switch player.FSMState {
+	case domain.StateWaitingNickname:
+		uc.playerRepo.UpdateGameData(tgID, "game_nickname", input)
+		uc.playerRepo.UpdateState(tgID, domain.StateWaitingGameID)
+		return "Принято. Теперь введите ваш Game ID (основной, без скобок):", false
+
 	case domain.StateWaitingGameID:
 		uc.playerRepo.UpdateGameData(tgID, "game_id", input)
 		uc.playerRepo.UpdateState(tgID, domain.StateWaitingZoneID)
@@ -83,8 +88,8 @@ func (uc *regUseCase) StartSoloRegistration(tgID int64) string {
 		return "Вы уже состоите в команде! Чтобы зарегистрироваться как соло, сначала покиньте команду или удалите её (/delete_team)."
 	}
 
-	uc.playerRepo.UpdateState(tgID, domain.StateWaitingGameID)
-	return "Начинаем регистрацию соло-игрока.\nВведите ваш Game ID (основной, без скобок):"
+	uc.playerRepo.UpdateState(tgID, domain.StateWaitingNickname)
+	return "Начинаем регистрацию.\n\nВведите ваш игровой никнейм (желательно как в игре):"
 }
 
 func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
@@ -124,7 +129,7 @@ func (uc *regUseCase) GetTeamInfo(tgID int64) string {
 	player, _ := uc.playerRepo.GetByTelegramID(tgID)
 
 	if player.TeamID == nil {
-		return "Вы не состоите в команде. Используйте /reg_team для создания или /reg_solo для поиска."
+		return "Вы не состоите в команде."
 	}
 
 	team, err := uc.teamRepo.GetTeamByID(*player.TeamID)
@@ -134,14 +139,29 @@ func (uc *regUseCase) GetTeamInfo(tgID int64) string {
 
 	members, _ := uc.playerRepo.GetTeamMembers(*player.TeamID)
 
-	report := fmt.Sprintf("Команда: %s\n\n👥 Состав:\n", team.Name)
+	report := fmt.Sprintf("Команда: %s\n\n Состав: \n", team.Name)
+
 	for i, p := range members {
 		role := p.MainRole
 		if role == "" {
 			role = "Не определена"
 		}
 
-		report += fmt.Sprintf("%d. %s (Ранг: %d⭐) — %s\n", i+1, p.GameNickname, p.Stars, role)
+		contact := "Без юзернейма"
+		if p.TelegramUsername != "" {
+			contact = fmt.Sprintf("@%s", p.TelegramUsername)
+		}
+
+		report += fmt.Sprintf(
+			"%d. %s (ID: `%s` %s)\n   └ Роль: %s | Ранг: %d⭐\n   └ Связь: %s\n\n",
+			i+1,
+			p.GameNickname,
+			p.GameID,
+			p.ZoneID,
+			role,
+			p.Stars,
+			contact,
+		)
 	}
 
 	return report
