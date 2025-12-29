@@ -7,11 +7,12 @@ import (
 )
 
 const (
-	StateIdle          = ""
-	StateWaitingGameID = "waiting_game_id"
-	StateWaitingZoneID = "waiting_zone_id"
-	StateWaitingStars  = "waiting_stars"
-	StateWaitingRole   = "waiting_role"
+	StateIdle            = ""
+	StateWaitingGameID   = "waiting_game_id"
+	StateWaitingZoneID   = "waiting_zone_id"
+	StateWaitingStars    = "waiting_stars"
+	StateWaitingRole     = "waiting_role"
+	StateWaitingTeamName = "waiting_team_name"
 )
 
 type Role string

@@ -1,9 +1,10 @@
 package delivery
 
 import (
-	"gopkg.in/telebot.v3"
 	"valhalla-telegram/internal/domain"
 	"valhalla-telegram/internal/usecase"
+
+	"gopkg.in/telebot.v3"
 )
 
 type Handler struct {
@@ -18,6 +19,7 @@ func NewHandler(b *telebot.Bot, uc usecase.RegistrationUseCase) *Handler {
 func (h *Handler) InitRoutes() {
 	h.bot.Handle("/start", h.OnStart)
 	h.bot.Handle("/reg_solo", h.OnRegSolo)
+	h.bot.Handle("/reg_team", h.OnRegTeam)
 
 	h.bot.Handle(telebot.OnText, h.OnTextMsg)
 }
@@ -55,4 +57,9 @@ func (h *Handler) OnTextMsg(c telebot.Context) error {
 	}
 
 	return c.Send(responseMsg, &telebot.ReplyMarkup{RemoveKeyboard: true})
+}
+
+func (h *Handler) OnRegTeam(c telebot.Context) error {
+	msg := h.uc.StartTeamRegistration(c.Sender().ID)
+	return c.Send(msg)
 }

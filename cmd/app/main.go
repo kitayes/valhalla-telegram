@@ -48,7 +48,10 @@ func main() {
 	}
 
 	playerRepo := repository.NewPlayerRepository(db)
-	regUseCase := usecase.NewRegistrationUseCase(playerRepo)
+	teamRepo := repository.NewTeamRepository(db)
+
+	regUseCase := usecase.NewRegistrationUseCase(playerRepo, teamRepo)
+
 	handler := delivery.NewHandler(b, regUseCase)
 
 	handler.InitRoutes()
