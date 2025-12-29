@@ -38,25 +38,25 @@ func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
 	case domain.StateWaitingGameID:
 		uc.playerRepo.UpdateGameData(tgID, "game_id", input)
 		uc.playerRepo.UpdateState(tgID, domain.StateWaitingZoneID)
-		return "Отлично. Теперь введите **Zone ID** (цифры в скобках):", false
+		return "Отлично. Теперь введите Zone ID (цифры в скобках):", false
 
 	case domain.StateWaitingZoneID:
 		uc.playerRepo.UpdateGameData(tgID, "zone_id", input)
 		uc.playerRepo.UpdateState(tgID, domain.StateWaitingStars)
-		return "Принято. Сколько у вас **звезд** (Stars) в текущем сезоне? (введите число)", false
+		return "Принято. Какое ваше максимальное количество звезд в сезоне? (введите число)", false
 
 	case domain.StateWaitingStars:
 		stars, err := strconv.Atoi(input)
 		if err != nil {
-			return "⚠️ Пожалуйста, введите число.", false
+			return "⚠Пожалуйста, введите число.", false
 		}
 		uc.playerRepo.UpdateGameData(tgID, "stars", stars)
 		uc.playerRepo.UpdateState(tgID, domain.StateWaitingRole)
-		return "Почти все! Выберите вашу **основную роль**:", true // true = покажи клавиатуру
+		return "Почти все! Выберите вашу основную роль:", true
 
 	case domain.StateWaitingRole:
 		uc.playerRepo.UpdateGameData(tgID, "main_role", input)
-		uc.playerRepo.UpdateState(tgID, domain.StateIdle) // Сброс состояния
+		uc.playerRepo.UpdateState(tgID, domain.StateIdle)
 		return "Регистрация завершена! Ждите формирования команд.", false
 
 	case domain.StateWaitingTeamName:
@@ -69,7 +69,7 @@ func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
 
 		uc.playerRepo.UpdateState(tgID, domain.StateIdle)
 
-		return fmt.Sprintf("🏆 Команда **%s** успешно создана! Вы назначены капитаном.", team.Name), false
+		return fmt.Sprintf("Команда %s успешно создана! Вы назначены капитаном.", team.Name), false
 
 	default:
 		return "Я не понимаю. Нажмите /reg_solo или /reg_team.", false
@@ -84,7 +84,7 @@ func (uc *regUseCase) StartSoloRegistration(tgID int64) string {
 	}
 
 	uc.playerRepo.UpdateState(tgID, domain.StateWaitingGameID)
-	return "Начинаем регистрацию соло-игрока.\nВведите ваш **Game ID** (основной, без скобок):"
+	return "Начинаем регистрацию соло-игрока.\nВведите ваш Game ID (основной, без скобок):"
 }
 
 func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
@@ -95,14 +95,14 @@ func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
 	}
 
 	uc.playerRepo.UpdateState(tgID, domain.StateWaitingTeamName)
-	return "Вы регистрируете новую команду.\nВведите **Название команды**:"
+	return "Вы регистрируете новую команду.\nВведите Название команды:"
 }
 
 func (uc *regUseCase) DeleteTeam(tgID int64) string {
 	player, _ := uc.playerRepo.GetByTelegramID(tgID)
 
 	if player.TeamID == nil {
-		return "⚠️ У вас нет команды, чтобы её удалять."
+		return "У вас нет команды, чтобы её удалять."
 	}
 
 	teamID := *player.TeamID
@@ -117,7 +117,7 @@ func (uc *regUseCase) DeleteTeam(tgID int64) string {
 		return "Ошибка при удалении команды."
 	}
 
-	return "🗑 Команда успешно распущена. Все игроки теперь свободны."
+	return "Команда успешно распущена. Все игроки теперь свободны."
 }
 
 func (uc *regUseCase) GetTeamInfo(tgID int64) string {
