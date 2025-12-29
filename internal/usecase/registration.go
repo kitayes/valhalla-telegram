@@ -9,12 +9,11 @@ import (
 
 type RegistrationUseCase interface {
 	RegisterUser(tgID int64, username, firstName string) string
-
 	StartSoloRegistration(tgID int64) string
-
 	StartTeamRegistration(tgID int64) string
-
 	HandleUserInput(tgID int64, input string) (string, bool)
+	DeleteTeam(tgID int64) string
+	GetTeamInfo(tgID int64) string
 }
 
 type regUseCase struct {
@@ -97,4 +96,53 @@ func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
 
 	uc.playerRepo.UpdateState(tgID, domain.StateWaitingTeamName)
 	return "Вы регистрируете новую команду.\nВведите **Название команды**:"
+}
+
+func (uc *regUseCase) DeleteTeam(tgID int64) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+
+	if player.TeamID == nil {
+		return "⚠️ У вас нет команды, чтобы её удалять."
+	}
+
+	teamID := *player.TeamID
+
+	err := uc.playerRepo.ResetTeamID(teamID)
+	if err != nil {
+		return "Ошибка при роспуске игроков."
+	}
+
+	err = uc.teamRepo.DeleteTeam(teamID)
+	if err != nil {
+		return "Ошибка при удалении команды."
+	}
+
+	return "🗑 Команда успешно распущена. Все игроки теперь свободны."
+}
+
+func (uc *regUseCase) GetTeamInfo(tgID int64) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+
+	if player.TeamID == nil {
+		return "Вы не состоите в команде. Используйте /reg_team для создания или /reg_solo для поиска."
+	}
+
+	team, err := uc.teamRepo.GetTeamByID(*player.TeamID)
+	if err != nil {
+		return "Ошибка получения данных команды."
+	}
+
+	members, _ := uc.playerRepo.GetTeamMembers(*player.TeamID)
+
+	report := fmt.Sprintf("Команда: %s\n\n👥 Состав:\n", team.Name)
+	for i, p := range members {
+		role := p.MainRole
+		if role == "" {
+			role = "Не определена"
+		}
+
+		report += fmt.Sprintf("%d. %s (Ранг: %d⭐) — %s\n", i+1, p.GameNickname, p.Stars, role)
+	}
+
+	return report
 }

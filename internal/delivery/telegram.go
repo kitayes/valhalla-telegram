@@ -21,6 +21,9 @@ func (h *Handler) InitRoutes() {
 	h.bot.Handle("/reg_solo", h.OnRegSolo)
 	h.bot.Handle("/reg_team", h.OnRegTeam)
 
+	h.bot.Handle("/delete_team", h.OnDeleteTeam)
+	h.bot.Handle("/my_team", h.OnMyTeam)
+
 	h.bot.Handle(telebot.OnText, h.OnTextMsg)
 }
 
@@ -32,6 +35,16 @@ func (h *Handler) OnStart(c telebot.Context) error {
 
 func (h *Handler) OnRegSolo(c telebot.Context) error {
 	msg := h.uc.StartSoloRegistration(c.Sender().ID)
+	return c.Send(msg)
+}
+
+func (h *Handler) OnDeleteTeam(c telebot.Context) error {
+	msg := h.uc.DeleteTeam(c.Sender().ID)
+	return c.Send(msg)
+}
+
+func (h *Handler) OnMyTeam(c telebot.Context) error {
+	msg := h.uc.GetTeamInfo(c.Sender().ID)
 	return c.Send(msg)
 }
 
