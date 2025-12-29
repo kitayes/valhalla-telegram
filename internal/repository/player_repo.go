@@ -1,8 +1,9 @@
 package repository
 
 import (
-	"gorm.io/gorm"
 	"valhalla-telegram/internal/domain"
+
+	"gorm.io/gorm"
 )
 
 type PlayerRepository interface {
@@ -10,6 +11,8 @@ type PlayerRepository interface {
 	CreateOrUpdate(player *domain.Player) error
 	UpdateState(tgID int64, state string) error
 	UpdateGameData(tgID int64, column string, value interface{}) error
+	ResetTeamID(teamID uint) error
+	GetTeamMembers(teamID uint) ([]domain.Player, error)
 }
 
 type playerRepo struct {
@@ -18,6 +21,16 @@ type playerRepo struct {
 
 func NewPlayerRepository(db *gorm.DB) PlayerRepository {
 	return &playerRepo{db: db}
+}
+
+func (r *playerRepo) ResetTeamID(teamID uint) error {
+	return r.db.Model(&domain.Player{}).Where("team_id = ?", teamID).Update("team_id", nil).Error
+}
+
+func (r *playerRepo) GetTeamMembers(teamID uint) ([]domain.Player, error) {
+	var players []domain.Player
+	err := r.db.Where("team_id = ?", teamID).Find(&players).Error
+	return players, err
 }
 
 func (r *playerRepo) GetByTelegramID(tgID int64) (*domain.Player, error) {

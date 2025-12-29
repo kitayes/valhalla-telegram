@@ -26,20 +26,10 @@ func NewRegistrationUseCase(pRepo repository.PlayerRepository, tRepo repository.
 	return &regUseCase{playerRepo: pRepo, teamRepo: tRepo}
 }
 
-func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
-	uc.playerRepo.UpdateState(tgID, domain.StateWaitingTeamName)
-	return "Вы регистрируете новую команду.\nВведите название команды:"
-}
-
 func (uc *regUseCase) RegisterUser(tgID int64, username, firstName string) string {
 	p := &domain.Player{TelegramID: tgID, TelegramUsername: username, FirstName: firstName}
 	uc.playerRepo.CreateOrUpdate(p)
 	return fmt.Sprintf("Привет, %s! Ты в системе.", firstName)
-}
-
-func (uc *regUseCase) StartSoloRegistration(tgID int64) string {
-	uc.playerRepo.UpdateState(tgID, domain.StateWaitingGameID)
-	return "Начинаем регистрацию.\nВведите ваш **Game ID** (основной, без скобок):"
 }
 
 func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
@@ -85,4 +75,26 @@ func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
 	default:
 		return "Я не понимаю. Нажмите /reg_solo или /reg_team.", false
 	}
+}
+
+func (uc *regUseCase) StartSoloRegistration(tgID int64) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+
+	if player.TeamID != nil {
+		return "Вы уже состоите в команде! Чтобы зарегистрироваться как соло, сначала покиньте команду или удалите её (/delete_team)."
+	}
+
+	uc.playerRepo.UpdateState(tgID, domain.StateWaitingGameID)
+	return "Начинаем регистрацию соло-игрока.\nВведите ваш **Game ID** (основной, без скобок):"
+}
+
+func (uc *regUseCase) StartTeamRegistration(tgID int64) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+
+	if player.TeamID != nil {
+		return "Вы уже состоите в команде! Вы не можете создать новую, пока не покинете текущую."
+	}
+
+	uc.playerRepo.UpdateState(tgID, domain.StateWaitingTeamName)
+	return "Вы регистрируете новую команду.\nВведите **Название команды**:"
 }
