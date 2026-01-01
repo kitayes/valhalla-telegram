@@ -24,6 +24,8 @@ const (
 	RoleMid    Role = "Mid"
 	RoleRoam   Role = "Roam"
 	RoleJungle Role = "Jungle"
+	RoleSub    Role = "Замена"
+	RoleAny    Role = "Любая"
 )
 
 type Team struct {
@@ -42,7 +44,7 @@ type Player struct {
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	TelegramID       int64  `gorm:"uniqueIndex;not null"`
+	TelegramID       *int64 `gorm:"uniqueIndex"`
 	TelegramUsername string `gorm:"size:64"`
 	FirstName        string `gorm:"size:64"`
 
@@ -52,7 +54,10 @@ type Player struct {
 	Stars        int    `gorm:"default:0"`
 	MainRole     Role   `gorm:"size:20"`
 
-	FSMState string `gorm:"size:32"`
+	IsCaptain    bool `gorm:"default:false"`
+	IsSubstitute bool `gorm:"default:false"`
+
+	FSMState string `gorm:"size:64"`
 
 	TeamID *uint
 }
