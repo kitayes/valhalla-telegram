@@ -1,78 +1,177 @@
 package delivery
 
 import (
-	"valhalla-telegram/internal/domain"
+	"log"
+	"strings"
 	"valhalla-telegram/internal/usecase"
 
-	"gopkg.in/telebot.v3"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-type Handler struct {
-	uc  usecase.RegistrationUseCase
-	bot *telebot.Bot
+var adminIDs = []int64{
+	123456789, // Твой ID
+	987654321, // ID второго админа
 }
 
-func NewHandler(b *telebot.Bot, uc usecase.RegistrationUseCase) *Handler {
-	return &Handler{bot: b, uc: uc}
+func isAdmin(id int64) bool {
+	for _, admin := range adminIDs {
+		if admin == id {
+			return true
+		}
+	}
+	return false
 }
 
-func (h *Handler) InitRoutes() {
-	h.bot.Handle("/start", h.OnStart)
-	h.bot.Handle("/reg_solo", h.OnRegSolo)
-	h.bot.Handle("/reg_team", h.OnRegTeam)
-
-	h.bot.Handle("/delete_team", h.OnDeleteTeam)
-	h.bot.Handle("/my_team", h.OnMyTeam)
-
-	h.bot.Handle(telebot.OnText, h.OnTextMsg)
+type TelegramHandler struct {
+	bot     *tgbotapi.BotAPI
+	useCase usecase.RegistrationUseCase
 }
 
-func (h *Handler) OnStart(c telebot.Context) error {
-	user := c.Sender()
-	msg := h.uc.RegisterUser(user.ID, user.Username, user.FirstName)
-	return c.Send(msg)
+func NewTelegramHandler(token string, uc usecase.RegistrationUseCase) (*TelegramHandler, error) {
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Authorized on account %s", bot.Self.UserName)
+
+	return &TelegramHandler{bot: bot, useCase: uc}, nil
 }
 
-func (h *Handler) OnRegSolo(c telebot.Context) error {
-	msg := h.uc.StartSoloRegistration(c.Sender().ID)
-	return c.Send(msg)
+func (h *TelegramHandler) Start() {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates := h.bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		if update.Message == nil {
+			continue
+		}
+
+		msg := update.Message
+		chatID := msg.Chat.ID
+		text := msg.Text
+		user := msg.From
+
+		// Регистрируем пользователя при любом контакте, чтобы он был в базе
+		h.useCase.RegisterUser(chatID, user.UserName, user.FirstName)
+
+		var response string
+		var showKeyboard bool
+
+		// --- АДМИНСКИЕ КОМАНДЫ ---
+		if isAdmin(chatID) {
+			if strings.HasPrefix(text, "/admin") {
+				response = "👮 Админ-панель:\n\n" +
+					"/export - Скачать список команд (Excel/CSV)\n" +
+					"/broadcast [текст] - Рассылка всем капитанам\n" +
+					"/close_reg - Закрыть регистрацию\n" +
+					"/open_reg - Открыть регистрацию\n" +
+					"/del_team [Название] - Удалить команду\n" +
+					"/reset_user [ChatID] - Сброс FSM"
+				h.sendMessage(chatID, response, false)
+				continue
+			}
+
+			if text == "/export" {
+				csvData, err := h.useCase.GenerateTeamsCSV()
+				if err != nil {
+					h.sendMessage(chatID, "Ошибка генерации: "+err.Error(), false)
+				} else {
+					// Отправка файла
+					fileBytes := tgbotapi.FileBytes{
+						Name:  "teams_export.csv",
+						Bytes: csvData,
+					}
+					docMsg := tgbotapi.NewDocument(chatID, fileBytes)
+					h.bot.Send(docMsg)
+				}
+				continue
+			}
+
+			if strings.HasPrefix(text, "/broadcast ") {
+				msgText := strings.TrimPrefix(text, "/broadcast ")
+				captains, _ := h.useCase.GetBroadcastList()
+
+				count := 0
+				for _, capID := range captains {
+					h.sendMessage(capID, "📢 ОФИЦИАЛЬНОЕ ОБЪЯВЛЕНИЕ:\n\n"+msgText, false)
+					count++
+				}
+				h.sendMessage(chatID, response+string(rune(count))+" капитанов получили сообщение.", false)
+				continue
+			}
+
+			if text == "/close_reg" {
+				h.useCase.SetRegistrationOpen(false)
+				h.sendMessage(chatID, "⛔ Регистрация закрыта.", false)
+				continue
+			}
+			if text == "/open_reg" {
+				h.useCase.SetRegistrationOpen(true)
+				h.sendMessage(chatID, "✅ Регистрация открыта.", false)
+				continue
+			}
+
+			if strings.HasPrefix(text, "/del_team ") {
+				teamName := strings.TrimPrefix(text, "/del_team ")
+				resp := h.useCase.AdminDeleteTeam(teamName)
+				h.sendMessage(chatID, resp, false)
+				continue
+			}
+		}
+
+		// --- ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ---
+		switch text {
+		case "/start":
+			response = "Добро пожаловать в Valhalla Cup!\n\n" +
+				"/reg_solo - Регистрация соло (поиск команды)\n" +
+				"/reg_team - Регистрация своей команды (для капитанов)\n" +
+				"/my_team - Моя команда и статус\n" +
+				"/checkin - Подтвердить участие (Check-in)\n" +
+				"/delete_team - Распустить команду (только капитан)"
+
+		case "/reg_solo":
+			response = h.useCase.StartSoloRegistration(chatID)
+		case "/reg_team":
+			response = h.useCase.StartTeamRegistration(chatID)
+		case "/my_team":
+			response = h.useCase.GetTeamInfo(chatID)
+		case "/checkin":
+			response = h.useCase.ToggleCheckIn(chatID)
+		case "/delete_team":
+			response = h.useCase.DeleteTeam(chatID)
+
+		default:
+			response, showKeyboard = h.useCase.HandleUserInput(chatID, text)
+		}
+
+		h.sendMessage(chatID, response, showKeyboard)
+	}
 }
 
-func (h *Handler) OnDeleteTeam(c telebot.Context) error {
-	msg := h.uc.DeleteTeam(c.Sender().ID)
-	return c.Send(msg)
-}
-
-func (h *Handler) OnMyTeam(c telebot.Context) error {
-	msg := h.uc.GetTeamInfo(c.Sender().ID)
-	return c.Send(msg)
-}
-
-func (h *Handler) OnTextMsg(c telebot.Context) error {
-	user := c.Sender()
-	text := c.Text()
-
-	responseMsg, showKeyboard := h.uc.HandleUserInput(user.ID, text)
+func (h *TelegramHandler) sendMessage(chatID int64, text string, showKeyboard bool) {
+	if text == "" {
+		return
+	}
+	msg := tgbotapi.NewMessage(chatID, text)
 
 	if showKeyboard {
-		menu := &telebot.ReplyMarkup{ResizeKeyboard: true}
-		btnGold := menu.Text(string(domain.RoleGold))
-		btnExp := menu.Text(string(domain.RoleExp))
-		btnMid := menu.Text(string(domain.RoleMid))
-		btnRoam := menu.Text(string(domain.RoleRoam))
-		btnJungle := menu.Text(string(domain.RoleJungle))
-
-		menu.Reply(
-			menu.Row(btnGold, btnExp),
-			menu.Row(btnMid, btnRoam, btnJungle),
+		// Пример клавиатуры ролей
+		keyboard := tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Gold"),
+				tgbotapi.NewKeyboardButton("Exp"),
+				tgbotapi.NewKeyboardButton("Mid"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Roam"),
+				tgbotapi.NewKeyboardButton("Jungle"),
+			),
 		)
-		return c.Send(responseMsg, menu)
+		msg.ReplyMarkup = keyboard
+	} else {
+		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 	}
 
-	return c.Send(responseMsg, &telebot.ReplyMarkup{RemoveKeyboard: true})
-}
-
-func (h *Handler) OnRegTeam(c telebot.Context) error {
-	msg := h.uc.StartTeamRegistration(c.Sender().ID)
-	return c.Send(msg)
+	h.bot.Send(msg)
 }

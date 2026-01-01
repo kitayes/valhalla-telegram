@@ -3,14 +3,12 @@ package main
 import (
 	"log"
 	"os"
-	"time"
 
 	"valhalla-telegram/internal/delivery"
 	"valhalla-telegram/internal/domain"
 	"valhalla-telegram/internal/repository"
 	"valhalla-telegram/internal/usecase"
 
-	"gopkg.in/telebot.v3"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -24,7 +22,9 @@ func getEnv(key, fallback string) string {
 
 func main() {
 	botToken := getEnv("BOT_TOKEN", "7956067295:AAFiRbObm1jzuNJ0kXtwbvI97zuPArZMb90")
-	dbDSN := getEnv("DB_DSN", "host=localhost user=postgres password=postgres dbname=postgres port=5432 sslmode=disable")
+
+	defaultDSN := "host=localhost user=postgres password=postgres dbname=postgres port=5432 sslmode=disable"
+	dbDSN := getEnv("DB_DSN", defaultDSN)
 
 	db, err := gorm.Open(postgres.Open(dbDSN), &gorm.Config{})
 	if err != nil {
@@ -37,25 +37,17 @@ func main() {
 	}
 	log.Println("Database connection established & Migrations applied")
 
-	pref := telebot.Settings{
-		Token:  botToken,
-		Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
-	}
-
-	b, err := telebot.NewBot(pref)
-	if err != nil {
-		log.Fatal("Bot init error:", err)
-	}
-
 	playerRepo := repository.NewPlayerRepository(db)
 	teamRepo := repository.NewTeamRepository(db)
 
 	regUseCase := usecase.NewRegistrationUseCase(playerRepo, teamRepo)
 
-	handler := delivery.NewHandler(b, regUseCase)
+	tgHandler, err := delivery.NewTelegramHandler(botToken, regUseCase)
+	if err != nil {
+		log.Fatal("Bot init error:", err)
+	}
 
-	handler.InitRoutes()
-
-	log.Println("Bot is running...")
-	b.Start()
+	// 6. Запуск
+	log.Println("Valhalla Bot is running...")
+	tgHandler.Start()
 }

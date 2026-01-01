@@ -34,8 +34,9 @@ type Team struct {
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	Name    string   `gorm:"unique;not null"`
-	Players []Player `gorm:"foreignKey:TeamID"`
+	Name        string   `gorm:"unique;not null"`
+	IsCheckedIn bool     `gorm:"default:false"`
+	Players     []Player `gorm:"foreignKey:TeamID"`
 }
 
 type Player struct {
