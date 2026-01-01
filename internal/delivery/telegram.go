@@ -1,7 +1,9 @@
 package delivery
 
 import (
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"valhalla-telegram/internal/usecase"
 
@@ -9,8 +11,10 @@ import (
 )
 
 var adminIDs = []int64{
-	123456789, // Твой ID
-	987654321, // ID второго админа
+	8150393380,
+	6498318881,
+	1209165513,
+	5306796711,
 }
 
 func isAdmin(id int64) bool {
@@ -52,13 +56,40 @@ func (h *TelegramHandler) Start() {
 		text := msg.Text
 		user := msg.From
 
-		// Регистрируем пользователя при любом контакте, чтобы он был в базе
+		if msg.Photo != nil && len(msg.Photo) > 0 {
+			photoID := msg.Photo[len(msg.Photo)-1].FileID
+			caption := msg.Caption
+
+			resp := h.useCase.HandleReport(chatID, photoID, caption)
+
+			if strings.HasPrefix(resp, "ADMIN_REPORT:") {
+				parts := strings.SplitN(resp, ":", 3)
+				if len(parts) == 3 {
+					fileID := parts[1]
+					reportText := parts[2]
+
+					count := 0
+					for _, adminID := range adminIDs {
+						photoMsg := tgbotapi.NewPhoto(adminID, tgbotapi.FileID(fileID))
+						photoMsg.Caption = "📨 НОВЫЙ РЕПОРТ ОТ КОМАНДЫ:\n\n" + reportText
+						_, err := h.bot.Send(photoMsg)
+						if err == nil {
+							count++
+						}
+					}
+					h.sendMessage(chatID, fmt.Sprintf("✅ Результат отправлен %d администраторам! Ожидайте подтверждения.", count), false)
+				}
+			} else {
+				h.sendMessage(chatID, resp, false)
+			}
+			continue
+		}
+
 		h.useCase.RegisterUser(chatID, user.UserName, user.FirstName)
 
 		var response string
 		var showKeyboard bool
 
-		// --- АДМИНСКИЕ КОМАНДЫ ---
 		if isAdmin(chatID) {
 			if strings.HasPrefix(text, "/admin") {
 				response = "👮 Админ-панель:\n\n" +
@@ -77,7 +108,6 @@ func (h *TelegramHandler) Start() {
 				if err != nil {
 					h.sendMessage(chatID, "Ошибка генерации: "+err.Error(), false)
 				} else {
-					// Отправка файла
 					fileBytes := tgbotapi.FileBytes{
 						Name:  "teams_export.csv",
 						Bytes: csvData,
@@ -94,21 +124,21 @@ func (h *TelegramHandler) Start() {
 
 				count := 0
 				for _, capID := range captains {
-					h.sendMessage(capID, "📢 ОФИЦИАЛЬНОЕ ОБЪЯВЛЕНИЕ:\n\n"+msgText, false)
+					h.sendMessage(capID, "ОФИЦИАЛЬНОЕ ОБЪЯВЛЕНИЕ:\n\n"+msgText, false)
 					count++
 				}
-				h.sendMessage(chatID, response+string(rune(count))+" капитанов получили сообщение.", false)
+				h.sendMessage(chatID, "Рассылка завершена. "+strconv.Itoa(count)+" капитанов получили сообщение.", false)
 				continue
 			}
 
 			if text == "/close_reg" {
 				h.useCase.SetRegistrationOpen(false)
-				h.sendMessage(chatID, "⛔ Регистрация закрыта.", false)
+				h.sendMessage(chatID, "Регистрация закрыта.", false)
 				continue
 			}
 			if text == "/open_reg" {
 				h.useCase.SetRegistrationOpen(true)
-				h.sendMessage(chatID, "✅ Регистрация открыта.", false)
+				h.sendMessage(chatID, "Регистрация открыта.", false)
 				continue
 			}
 
@@ -118,17 +148,46 @@ func (h *TelegramHandler) Start() {
 				h.sendMessage(chatID, resp, false)
 				continue
 			}
+
+			if strings.HasPrefix(text, "/reset_user ") {
+				targetIDStr := strings.TrimPrefix(text, "/reset_user ")
+				targetID, err := strconv.ParseInt(targetIDStr, 10, 64)
+				if err != nil {
+					h.sendMessage(chatID, "ID должен быть числом.", false)
+				} else {
+					resp := h.useCase.AdminResetUser(targetID)
+					h.sendMessage(chatID, resp, false)
+				}
+				continue
+			}
 		}
 
-		// --- ПОЛЬЗОВАТЕЛЬСКИЕ КОМАНДЫ ---
+		if strings.HasPrefix(text, "/edit_player") {
+			parts := strings.Fields(text)
+			if len(parts) != 2 {
+				response = "Используйте: /edit_player [номер]\nПример: /edit_player 3"
+			} else {
+				slot, err := strconv.Atoi(parts[1])
+				if err != nil {
+					response = "Номер игрока должен быть числом."
+				} else {
+					response = h.useCase.StartEditPlayer(chatID, slot)
+				}
+			}
+			h.sendMessage(chatID, response, false)
+			continue
+		}
+
 		switch text {
 		case "/start":
-			response = "Добро пожаловать в Valhalla Cup!\n\n" +
-				"/reg_solo - Регистрация соло (поиск команды)\n" +
-				"/reg_team - Регистрация своей команды (для капитанов)\n" +
-				"/my_team - Моя команда и статус\n" +
-				"/checkin - Подтвердить участие (Check-in)\n" +
-				"/delete_team - Распустить команду (только капитан)"
+			response = "Valhalla Cup Bot\n\n" +
+				"/reg_solo - Ищу команду\n" +
+				"/reg_team - Создать команду\n" +
+				"/my_team - Мой состав\n" +
+				"/edit_player [№] - Изменить игрока\n" +
+				"/checkin - Подтвердить участие\n" +
+				"/report - Отправить результат матча\n" +
+				"/delete_team - Удалить команду"
 
 		case "/reg_solo":
 			response = h.useCase.StartSoloRegistration(chatID)
@@ -140,6 +199,8 @@ func (h *TelegramHandler) Start() {
 			response = h.useCase.ToggleCheckIn(chatID)
 		case "/delete_team":
 			response = h.useCase.DeleteTeam(chatID)
+		case "/report":
+			response = h.useCase.StartReport(chatID)
 
 		default:
 			response, showKeyboard = h.useCase.HandleUserInput(chatID, text)
@@ -156,7 +217,6 @@ func (h *TelegramHandler) sendMessage(chatID int64, text string, showKeyboard bo
 	msg := tgbotapi.NewMessage(chatID, text)
 
 	if showKeyboard {
-		// Пример клавиатуры ролей
 		keyboard := tgbotapi.NewReplyKeyboard(
 			tgbotapi.NewKeyboardButtonRow(
 				tgbotapi.NewKeyboardButton("Gold"),
@@ -166,6 +226,10 @@ func (h *TelegramHandler) sendMessage(chatID int64, text string, showKeyboard bo
 			tgbotapi.NewKeyboardButtonRow(
 				tgbotapi.NewKeyboardButton("Roam"),
 				tgbotapi.NewKeyboardButton("Jungle"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Замена"),
+				tgbotapi.NewKeyboardButton("Любая"),
 			),
 		)
 		msg.ReplyMarkup = keyboard

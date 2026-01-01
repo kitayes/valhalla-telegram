@@ -14,6 +14,7 @@ const (
 	StateWaitingStars    = "waiting_stars"
 	StateWaitingRole     = "waiting_role"
 	StateWaitingTeamName = "waiting_team_name"
+	StateWaitingReport   = "waiting_report"
 )
 
 type Role string

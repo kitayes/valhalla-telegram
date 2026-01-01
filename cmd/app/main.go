@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"valhalla-telegram/internal/delivery"
 	"valhalla-telegram/internal/domain"
@@ -26,9 +27,25 @@ func main() {
 	defaultDSN := "host=localhost user=postgres password=postgres dbname=postgres port=5432 sslmode=disable"
 	dbDSN := getEnv("DB_DSN", defaultDSN)
 
-	db, err := gorm.Open(postgres.Open(dbDSN), &gorm.Config{})
+	var db *gorm.DB
+	var err error
+
+	maxRetries := 10
+	for i := 1; i <= maxRetries; i++ {
+		log.Printf("Trying to connect to DB (Attempt %d/%d)...", i, maxRetries)
+		db, err = gorm.Open(postgres.Open(dbDSN), &gorm.Config{})
+
+		if err == nil {
+			log.Println("Success! Connected to Database.")
+			break
+		}
+
+		log.Printf("DB connection failed: %v. Waiting 3 seconds...", err)
+		time.Sleep(3 * time.Second)
+	}
+
 	if err != nil {
-		log.Fatal("DB Connect error:", err)
+		log.Fatal("Could not connect to DB after multiple retries. Exiting.")
 	}
 
 	err = db.AutoMigrate(&domain.Team{}, &domain.Player{})

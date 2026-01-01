@@ -14,20 +14,22 @@ type RegistrationUseCase interface {
 	RegisterUser(tgID int64, username, firstName string) string
 	HandleUserInput(tgID int64, input string) (string, bool)
 
-	// Команды пользователя
 	StartSoloRegistration(tgID int64) string
 	StartTeamRegistration(tgID int64) string
 	DeleteTeam(tgID int64) string
 	GetTeamInfo(tgID int64) string
 	ToggleCheckIn(tgID int64) string
 
-	// Админские функции
 	SetRegistrationOpen(isOpen bool)
 	IsRegistrationOpen() bool
 	GenerateTeamsCSV() ([]byte, error)
 	GetBroadcastList() ([]int64, error)
 	AdminDeleteTeam(teamName string) string
 	AdminResetUser(tgID int64) string
+
+	StartEditPlayer(tgID int64, slot int) string
+	StartReport(tgID int64) string
+	HandleReport(tgID int64, photoFileID, caption string) string
 }
 
 type regUseCase struct {
@@ -52,11 +54,69 @@ func (uc *regUseCase) RegisterUser(tgID int64, username, firstName string) strin
 	return fmt.Sprintf("Привет, %s! Добро пожаловать в Valhalla Cup.", firstName)
 }
 
+func (uc *regUseCase) handleEditLoop(captain *domain.Player, input string) (string, bool) {
+	parts := strings.Split(captain.FSMState, "_") // edit, player, step, slot
+	step := parts[2]
+	slotStr := parts[3]
+	slot, _ := strconv.Atoi(slotStr)
+
+	members, _ := uc.playerRepo.GetTeamMembers(*captain.TeamID)
+
+	if slot > len(members) {
+		uc.playerRepo.UpdateState(*captain.TelegramID, domain.StateIdle)
+		return "Ошибка: игрок под этим номером не найден в базе.", false
+	}
+
+	targetPlayer := members[slot-1]
+
+	switch step {
+	case "nick":
+		uc.playerRepo.UpdateGameData(int64(targetPlayer.ID), "game_nickname", input) // Тут нужен хак, т.к. метод принимает tgID, а у тиммейта его нет.
+		uc.playerRepo.UpdatePlayerField(targetPlayer.ID, "game_nickname", input)
+
+		uc.playerRepo.UpdateState(*captain.TelegramID, fmt.Sprintf("edit_player_id_%d", slot))
+		return "Ник обновлен. Введите новый Game ID:", false
+
+	case "id":
+		if _, err := strconv.Atoi(input); err != nil {
+			return "Game ID должен быть числом.", false
+		}
+		uc.playerRepo.UpdatePlayerField(targetPlayer.ID, "game_id", input)
+
+		uc.playerRepo.UpdateState(*captain.TelegramID, fmt.Sprintf("edit_player_zone_%d", slot))
+		return "Введите Zone ID:", false
+
+	case "zone":
+		uc.playerRepo.UpdatePlayerField(targetPlayer.ID, "zone_id", input)
+		uc.playerRepo.UpdateState(*captain.TelegramID, fmt.Sprintf("edit_player_rank_%d", slot))
+		return "Введите количество Звезд (Rank):", false
+
+	case "rank":
+		stars, _ := strconv.Atoi(input)
+		uc.playerRepo.UpdatePlayerField(targetPlayer.ID, "stars", stars)
+
+		uc.playerRepo.UpdateState(*captain.TelegramID, fmt.Sprintf("edit_player_role_%d", slot))
+		return "Выберите роль:", true
+
+	case "role":
+		uc.playerRepo.UpdatePlayerField(targetPlayer.ID, "main_role", input)
+
+		uc.playerRepo.UpdateState(*captain.TelegramID, domain.StateIdle)
+		return fmt.Sprintf("✅ Данные игрока №%d успешно обновлены!", slot), false
+	}
+
+	return "Ошибка редактирования.", false
+}
+
 func (uc *regUseCase) HandleUserInput(tgID int64, input string) (string, bool) {
 	player, _ := uc.playerRepo.GetByTelegramID(tgID)
 
 	if strings.HasPrefix(player.FSMState, "team_reg_") {
 		return uc.handleTeamLoop(player, input)
+	}
+
+	if strings.HasPrefix(player.FSMState, "edit_player_") {
+		return uc.handleEditLoop(player, input)
 	}
 
 	switch player.FSMState {
@@ -408,4 +468,47 @@ func (uc *regUseCase) ToggleCheckIn(tgID int64) string {
 		status = "Вы отменили подтверждение участия."
 	}
 	return fmt.Sprintf("Статус команды '%s':\n%s", team.Name, status)
+}
+
+func (uc *regUseCase) StartEditPlayer(tgID int64, slot int) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+	if player.TeamID == nil || !player.IsCaptain {
+		return "Редактировать состав может только капитан команды."
+	}
+	if slot < 1 || slot > 7 {
+		return "Неверный номер игрока. Используйте от 1 до 7."
+	}
+
+	uc.playerRepo.UpdateState(tgID, fmt.Sprintf("edit_player_nick_%d", slot))
+
+	return fmt.Sprintf("Редактирование Игрока №%d.\nВведите новый Игровой Никнейм:", slot)
+}
+
+func (uc *regUseCase) StartReport(tgID int64) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+	if player.TeamID == nil || !player.IsCaptain {
+		return "Отправлять результаты матчей может только капитан."
+	}
+
+	uc.playerRepo.UpdateState(tgID, domain.StateWaitingReport)
+	return "Пожалуйста, отправьте Скриншот с результатами матча.\n(Можете добавить комментарий к фото, например 'Победа над Team Spirit')"
+}
+
+func (uc *regUseCase) HandleReport(tgID int64, photoFileID, caption string) string {
+	player, _ := uc.playerRepo.GetByTelegramID(tgID)
+
+	if player.FSMState != domain.StateWaitingReport {
+		return "Сначала введите команду /report, чтобы отправить результат."
+	}
+
+	team, _ := uc.teamRepo.GetTeamByID(*player.TeamID)
+
+	reportText := fmt.Sprintf(
+		"РЕЗУЛЬТАТ МАТЧА\nКоманда: %s\nКапитан: @%s\nКоммент: %s",
+		team.Name, player.TelegramUsername, caption,
+	)
+
+	uc.playerRepo.UpdateState(tgID, domain.StateIdle)
+
+	return "ADMIN_REPORT:" + photoFileID + ":" + reportText
 }
