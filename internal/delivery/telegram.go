@@ -68,19 +68,15 @@ func (h *TelegramHandler) Start() {
 					fileID := parts[1]
 					reportText := parts[2]
 
-					count := 0
 					for _, adminID := range adminIDs {
 						photoMsg := tgbotapi.NewPhoto(adminID, tgbotapi.FileID(fileID))
-						photoMsg.Caption = "📨 НОВЫЙ РЕПОРТ ОТ КОМАНДЫ:\n\n" + reportText
-						_, err := h.bot.Send(photoMsg)
-						if err == nil {
-							count++
-						}
+						photoMsg.Caption = "НОВЫЙ РЕЗУЛЬТАТ МАТЧА:\n\n" + reportText
+						h.bot.Send(photoMsg)
 					}
-					h.sendMessage(chatID, fmt.Sprintf("✅ Результат отправлен %d администраторам! Ожидайте подтверждения.", count), false)
+					h.sendMessage(chatID, "Скриншот отправлен судьям!", "empty")
 				}
 			} else {
-				h.sendMessage(chatID, resp, false)
+				h.sendMessage(chatID, resp, "empty")
 			}
 			continue
 		}
@@ -88,76 +84,63 @@ func (h *TelegramHandler) Start() {
 		h.useCase.RegisterUser(chatID, user.UserName, user.FirstName)
 
 		var response string
-		var showKeyboard bool
+		var kbType string = "empty"
 
 		if isAdmin(chatID) {
 			if strings.HasPrefix(text, "/admin") {
-				response = "👮 Админ-панель:\n\n" +
-					"/export - Скачать список команд (Excel/CSV)\n" +
-					"/broadcast [текст] - Рассылка всем капитанам\n" +
+				response = "Админ-панель:\n\n" +
+					"/export - Список команд (CSV)\n" +
+					"/broadcast [текст] - Рассылка капитанам\n" +
 					"/close_reg - Закрыть регистрацию\n" +
 					"/open_reg - Открыть регистрацию\n" +
 					"/del_team [Название] - Удалить команду\n" +
-					"/reset_user [ChatID] - Сброс FSM"
-				h.sendMessage(chatID, response, false)
+					"/reset_user [ID] - Сбросить FSM"
+				h.sendMessage(chatID, response, "empty")
 				continue
 			}
 
 			if text == "/export" {
 				csvData, err := h.useCase.GenerateTeamsCSV()
 				if err != nil {
-					h.sendMessage(chatID, "Ошибка генерации: "+err.Error(), false)
+					h.sendMessage(chatID, "Ошибка: "+err.Error(), "empty")
 				} else {
-					fileBytes := tgbotapi.FileBytes{
-						Name:  "teams_export.csv",
-						Bytes: csvData,
-					}
-					docMsg := tgbotapi.NewDocument(chatID, fileBytes)
-					h.bot.Send(docMsg)
+					fileBytes := tgbotapi.FileBytes{Name: "teams.csv", Bytes: csvData}
+					h.bot.Send(tgbotapi.NewDocument(chatID, fileBytes))
 				}
 				continue
 			}
 
 			if strings.HasPrefix(text, "/broadcast ") {
 				msgText := strings.TrimPrefix(text, "/broadcast ")
-				captains, _ := h.useCase.GetBroadcastList()
-
-				count := 0
-				for _, capID := range captains {
-					h.sendMessage(capID, "ОФИЦИАЛЬНОЕ ОБЪЯВЛЕНИЕ:\n\n"+msgText, false)
-					count++
+				ids, _ := h.useCase.GetBroadcastList()
+				for _, id := range ids {
+					h.sendMessage(id, "СООБЩЕНИЕ ОТ ОРГАНИЗАТОРОВ:\n\n"+msgText, "empty")
 				}
-				h.sendMessage(chatID, "Рассылка завершена. "+strconv.Itoa(count)+" капитанов получили сообщение.", false)
+				h.sendMessage(chatID, fmt.Sprintf("Рассылка на %d чел. завершена.", len(ids)), "empty")
 				continue
 			}
 
 			if text == "/close_reg" {
 				h.useCase.SetRegistrationOpen(false)
-				h.sendMessage(chatID, "Регистрация закрыта.", false)
+				h.sendMessage(chatID, "Регистрация закрыта.", "empty")
 				continue
 			}
 			if text == "/open_reg" {
 				h.useCase.SetRegistrationOpen(true)
-				h.sendMessage(chatID, "Регистрация открыта.", false)
+				h.sendMessage(chatID, "Регистрация открыта.", "empty")
 				continue
 			}
 
 			if strings.HasPrefix(text, "/del_team ") {
-				teamName := strings.TrimPrefix(text, "/del_team ")
-				resp := h.useCase.AdminDeleteTeam(teamName)
-				h.sendMessage(chatID, resp, false)
+				name := strings.TrimPrefix(text, "/del_team ")
+				h.sendMessage(chatID, h.useCase.AdminDeleteTeam(name), "empty")
 				continue
 			}
 
 			if strings.HasPrefix(text, "/reset_user ") {
-				targetIDStr := strings.TrimPrefix(text, "/reset_user ")
-				targetID, err := strconv.ParseInt(targetIDStr, 10, 64)
-				if err != nil {
-					h.sendMessage(chatID, "ID должен быть числом.", false)
-				} else {
-					resp := h.useCase.AdminResetUser(targetID)
-					h.sendMessage(chatID, resp, false)
-				}
+				idStr := strings.TrimPrefix(text, "/reset_user ")
+				id, _ := strconv.ParseInt(idStr, 10, 64)
+				h.sendMessage(chatID, h.useCase.AdminResetUser(id), "empty")
 				continue
 			}
 		}
@@ -165,59 +148,60 @@ func (h *TelegramHandler) Start() {
 		if strings.HasPrefix(text, "/edit_player") {
 			parts := strings.Fields(text)
 			if len(parts) != 2 {
-				response = "Используйте: /edit_player [номер]\nПример: /edit_player 3"
+				response = "Используйте: /edit_player [номер]"
 			} else {
-				slot, err := strconv.Atoi(parts[1])
-				if err != nil {
-					response = "Номер игрока должен быть числом."
-				} else {
-					response = h.useCase.StartEditPlayer(chatID, slot)
-				}
+				slot, _ := strconv.Atoi(parts[1])
+				response, kbType = h.useCase.StartEditPlayer(chatID, slot)
 			}
-			h.sendMessage(chatID, response, false)
+			h.sendMessage(chatID, response, kbType)
 			continue
 		}
 
 		switch text {
 		case "/start":
 			response = "Valhalla Cup Bot\n\n" +
-				"/reg_solo - Ищу команду\n" +
-				"/reg_team - Создать команду\n" +
+				"/reg_solo - Регистрация (соло)\n" +
+				"/reg_team - Регистрация (команда)\n" +
 				"/my_team - Мой состав\n" +
-				"/edit_player [№] - Изменить игрока\n" +
+				"/edit_player [№] - Изменить данные игрока\n" +
 				"/checkin - Подтвердить участие\n" +
 				"/report - Отправить результат матча\n" +
 				"/delete_team - Удалить команду"
+			kbType = "empty"
 
 		case "/reg_solo":
-			response = h.useCase.StartSoloRegistration(chatID)
+			response, kbType = h.useCase.StartSoloRegistration(chatID)
 		case "/reg_team":
-			response = h.useCase.StartTeamRegistration(chatID)
+			response, kbType = h.useCase.StartTeamRegistration(chatID)
 		case "/my_team":
 			response = h.useCase.GetTeamInfo(chatID)
+			kbType = "empty"
 		case "/checkin":
 			response = h.useCase.ToggleCheckIn(chatID)
+			kbType = "empty"
 		case "/delete_team":
 			response = h.useCase.DeleteTeam(chatID)
+			kbType = "empty"
 		case "/report":
-			response = h.useCase.StartReport(chatID)
+			response, kbType = h.useCase.StartReport(chatID)
 
 		default:
-			response, showKeyboard = h.useCase.HandleUserInput(chatID, text)
+			response, kbType = h.useCase.HandleUserInput(chatID, text)
 		}
 
-		h.sendMessage(chatID, response, showKeyboard)
+		h.sendMessage(chatID, response, kbType)
 	}
 }
 
-func (h *TelegramHandler) sendMessage(chatID int64, text string, showKeyboard bool) {
+func (h *TelegramHandler) sendMessage(chatID int64, text string, kbType string) {
 	if text == "" {
 		return
 	}
 	msg := tgbotapi.NewMessage(chatID, text)
 
-	if showKeyboard {
-		keyboard := tgbotapi.NewReplyKeyboard(
+	switch kbType {
+	case "role":
+		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
 			tgbotapi.NewKeyboardButtonRow(
 				tgbotapi.NewKeyboardButton("Gold"),
 				tgbotapi.NewKeyboardButton("Exp"),
@@ -231,9 +215,17 @@ func (h *TelegramHandler) sendMessage(chatID int64, text string, showKeyboard bo
 				tgbotapi.NewKeyboardButton("Замена"),
 				tgbotapi.NewKeyboardButton("Любая"),
 			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Отмена"),
+			),
 		)
-		msg.ReplyMarkup = keyboard
-	} else {
+	case "cancel":
+		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Отмена"),
+			),
+		)
+	default:
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 	}
 
