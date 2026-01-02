@@ -41,6 +41,9 @@ type RegistrationUseCase interface {
 	SetTournamentTime(t time.Time)
 	GetTournamentTime() time.Time
 	GetUncheckedTeams() ([]domain.Team, error)
+
+	GetTeamsList() string
+	AdminGetTeamDetails(name string) string
 }
 
 type regUseCase struct {
@@ -366,4 +369,49 @@ func (uc *regUseCase) GetUncheckedTeams() ([]domain.Team, error) {
 		}
 	}
 	return unchecked, nil
+}
+
+func (uc *regUseCase) GetTeamsList() string {
+	teams, err := uc.teamRepo.GetAllTeams()
+	if err != nil {
+		return "Ошибка при получении списка команд."
+	}
+	if len(teams) == 0 {
+		return "Команд пока нет."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Список команд (%d):\n\n", len(teams)))
+	for i, t := range teams {
+		check := "⚪"
+		if t.IsCheckedIn {
+			check = "✅"
+		}
+		sb.WriteString(fmt.Sprintf("%d. %s %s\n", i+1, check, t.Name))
+	}
+	return sb.String()
+}
+
+func (uc *regUseCase) AdminGetTeamDetails(name string) string {
+	team, err := uc.teamRepo.GetTeamByName(name)
+	if err != nil {
+		return fmt.Sprintf("Команда '%s' не найдена.", name)
+	}
+
+	members, _ := uc.playerRepo.GetTeamMembers(team.ID)
+
+	status := "Не подтверждена"
+	if team.IsCheckedIn {
+		status = "Подтверждена"
+	}
+
+	res := fmt.Sprintf("Команда: %s\nСтатус: %s\nID команды: %d\n\n", team.Name, status, team.ID)
+	for i, m := range members {
+		role := "Основа"
+		if m.IsSubstitute {
+			role = "Замена"
+		}
+		res += fmt.Sprintf("%d. %s [%s]\n   ID: %s (%s)\n   TG: %s\n\n", i+1, m.GameNickname, role, m.GameID, m.ZoneID, m.TelegramUsername)
+	}
+	return res
 }

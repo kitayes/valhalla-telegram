@@ -90,12 +90,14 @@ func (h *TelegramHandler) Start() {
 		if isAdmin(chatID) {
 			if strings.HasPrefix(text, "/admin") {
 				response = "Админ-панель:\n\n" +
-					"/export - Список команд (CSV)\n" +
-					"/broadcast [текст] - Рассылка капитанам\n" +
-					"/close_reg - Закрыть регистрацию\n" +
-					"/open_reg - Открыть регистрацию\n" +
-					"/del_team [Название] - Удалить команду\n" +
-					"/reset_user [ID] - Сбросить FSM"
+					"/list_teams - Краткий список и кол-во\n" +
+					"/check_team [Название] - Детальный состав\n" +
+					"/export - CSV файл\n" +
+					"/broadcast [текст] - Рассылка\n" +
+					"/set_tourney [дата] - Установить время\n" +
+					"/close_reg / /open_reg - Регистрация\n" +
+					"/del_team [Название] - Удалить\n" +
+					"/reset_user [ID] - Сброс FSM"
 				h.sendMessage(chatID, response, "empty")
 				continue
 			}
@@ -124,6 +126,17 @@ func (h *TelegramHandler) Start() {
 						t.Add(-30*time.Minute).Format("15:04"),
 						t.Add(10*time.Minute).Format("15:04")), "empty")
 				}
+				continue
+			}
+
+			if text == "/list_teams" {
+				h.sendMessage(chatID, h.useCase.GetTeamsList(), "empty")
+				continue
+			}
+
+			if strings.HasPrefix(text, "/check_team ") {
+				teamName := strings.TrimPrefix(text, "/check_team ")
+				h.sendMessage(chatID, h.useCase.AdminGetTeamDetails(teamName), "empty")
 				continue
 			}
 
