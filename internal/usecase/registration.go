@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"valhalla-telegram/internal/domain"
 	"valhalla-telegram/internal/repository"
 )
@@ -36,12 +37,17 @@ type RegistrationUseCase interface {
 	AdminDeleteTeam(teamName string) string
 	AdminResetUser(tgID int64) string
 	HandleReport(tgID int64, photoFileID, caption string) string
+
+	SetTournamentTime(t time.Time)
+	GetTournamentTime() time.Time
+	GetUncheckedTeams() ([]domain.Team, error)
 }
 
 type regUseCase struct {
 	playerRepo         repository.PlayerRepository
 	teamRepo           repository.TeamRepository
 	isRegistrationOpen bool
+	tournamentTime     time.Time
 }
 
 func NewRegistrationUseCase(pRepo repository.PlayerRepository, tRepo repository.TeamRepository) RegistrationUseCase {
@@ -343,4 +349,21 @@ func (uc *regUseCase) HandleReport(tgID int64, fileID, caption string) string {
 	t, _ := uc.teamRepo.GetTeamByID(*p.TeamID)
 	uc.playerRepo.UpdateState(tgID, domain.StateIdle)
 	return fmt.Sprintf("ADMIN_REPORT:%s:Команда: %s\nКапитан: @%s\nИнфо: %s", fileID, t.Name, p.TelegramUsername, caption)
+}
+
+func (uc *regUseCase) SetTournamentTime(t time.Time) { uc.tournamentTime = t }
+func (uc *regUseCase) GetTournamentTime() time.Time  { return uc.tournamentTime }
+
+func (uc *regUseCase) GetUncheckedTeams() ([]domain.Team, error) {
+	allTeams, err := uc.teamRepo.GetAllTeams()
+	if err != nil {
+		return nil, err
+	}
+	var unchecked []domain.Team
+	for _, t := range allTeams {
+		if !t.IsCheckedIn {
+			unchecked = append(unchecked, t)
+		}
+	}
+	return unchecked, nil
 }

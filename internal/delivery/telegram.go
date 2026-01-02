@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 	"valhalla-telegram/internal/usecase"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -106,6 +107,22 @@ func (h *TelegramHandler) Start() {
 				} else {
 					fileBytes := tgbotapi.FileBytes{Name: "teams.csv", Bytes: csvData}
 					h.bot.Send(tgbotapi.NewDocument(chatID, fileBytes))
+				}
+				continue
+			}
+
+			if strings.HasPrefix(text, "/set_tourney ") {
+				layout := "02.01.2006 15:04"
+				dateStr := strings.TrimPrefix(text, "/set_tourney ")
+				t, err := time.ParseInLocation(layout, dateStr, time.Local)
+				if err != nil {
+					h.sendMessage(chatID, "Ошибка! Формат: /set_tourney 20.05.2024 18:00", "empty")
+				} else {
+					h.useCase.SetTournamentTime(t)
+					h.sendMessage(chatID, fmt.Sprintf("Время турнира установлено: %s\nНапоминание в: %s\nТех. поражение в: %s",
+						t.Format(layout),
+						t.Add(-30*time.Minute).Format("15:04"),
+						t.Add(10*time.Minute).Format("15:04")), "empty")
 				}
 				continue
 			}
@@ -230,4 +247,65 @@ func (h *TelegramHandler) sendMessage(chatID int64, text string, kbType string) 
 	}
 
 	h.bot.Send(msg)
+}
+
+func (h *TelegramHandler) StartBackgroundWorker() {
+	ticker := time.NewTicker(1 * time.Minute)
+	go func() {
+		for range ticker.C {
+			tTime := h.useCase.GetTournamentTime()
+			if tTime.IsZero() {
+				continue
+			}
+
+			now := time.Now()
+
+			remindTime := tTime.Add(-30 * time.Minute)
+			if now.Hour() == remindTime.Hour() && now.Minute() == remindTime.Minute() {
+				h.broadcastCheckInReminder()
+			}
+
+			disqualifyTime := tTime.Add(10 * time.Minute)
+			if now.Hour() == disqualifyTime.Hour() && now.Minute() == disqualifyTime.Minute() {
+				h.processTechnicalDefeat()
+			}
+		}
+	}()
+}
+
+func (h *TelegramHandler) broadcastCheckInReminder() {
+	teams, _ := h.useCase.GetUncheckedTeams()
+	for _, team := range teams {
+		for _, p := range team.Players {
+			if p.IsCaptain && p.TelegramID != nil {
+				msg := fmt.Sprintf("⚠ВНИМАНИЕ, Капитан!\nВаша команда '%s' не прошла Check-in.\n\nУ вас есть время до %s, чтобы нажать /checkin, иначе — ТЕХНИЧЕСКОЕ ПОРАЖЕНИЕ.",
+					team.Name, h.useCase.GetTournamentTime().Add(10*time.Minute).Format("15:04"))
+				h.sendMessage(*p.TelegramID, msg, "empty")
+			}
+		}
+	}
+}
+
+func (h *TelegramHandler) processTechnicalDefeat() {
+	teams, _ := h.useCase.GetUncheckedTeams()
+	if len(teams) == 0 {
+		return
+	}
+
+	var report strings.Builder
+	report.WriteString("СПИСОК ТЕХ. ПОРАЖЕНИЙ (Не прошли чекин):\n\n")
+
+	for _, team := range teams {
+		report.WriteString(fmt.Sprintf("- %s\n", team.Name))
+
+		for _, p := range team.Players {
+			if p.IsCaptain && p.TelegramID != nil {
+				h.sendMessage(*p.TelegramID, "ТЕХНИЧЕСКОЕ ПОРАЖЕНИЕ.\nВы не подтвердили участие вовремя. Ваша команда снята с турнира.", "empty")
+			}
+		}
+	}
+
+	for _, adminID := range adminIDs {
+		h.sendMessage(adminID, report.String(), "empty")
+	}
 }
