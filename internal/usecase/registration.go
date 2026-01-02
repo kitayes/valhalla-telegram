@@ -352,7 +352,7 @@ func (uc *regUseCase) GetTeamInfo(tgID int64) string {
 		checkInStatus = "ГОТОВЫ К ИГРЕ"
 	}
 
-	report := fmt.Sprintf("🛡 Команда: %s\nСтатус: %s\n", team.Name, checkInStatus)
+	report := fmt.Sprintf("Команда: %s\nСтатус: %s\n", team.Name, checkInStatus)
 	report += "----------------------\n"
 
 	for i, p := range members {
