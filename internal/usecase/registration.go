@@ -45,6 +45,9 @@ type RegistrationUseCase interface {
 
 	GetTeamsList() string
 	AdminGetTeamDetails(name string) string
+
+	GenerateSoloPlayersCSV() ([]byte, error)
+	GetSoloPlayersList() string
 }
 
 type regUseCase struct {
@@ -434,4 +437,45 @@ func (uc *regUseCase) AdminGetTeamDetails(name string) string {
 		res += fmt.Sprintf("%d. %s [%s]\n   ID: %s (%s)\n   TG: %s\n\n", i+1, m.GameNickname, role, m.GameID, m.ZoneID, m.TelegramUsername)
 	}
 	return res
+}
+
+func (uc *regUseCase) GenerateSoloPlayersCSV() ([]byte, error) {
+	players, err := uc.playerRepo.GetSoloPlayers()
+	if err != nil {
+		return nil, err
+	}
+
+	b := &bytes.Buffer{}
+	w := csv.NewWriter(b)
+
+	w.Write([]string{"TG Username", "Nickname", "Game ID", "Zone ID", "Stars", "Role", "First Name"})
+
+	for _, p := range players {
+		record := []string{
+			p.TelegramUsername,
+			p.GameNickname,
+			p.GameID,
+			p.ZoneID,
+			fmt.Sprintf("%d", p.Stars),
+			string(p.MainRole),
+			p.FirstName,
+		}
+		w.Write(record)
+	}
+	w.Flush()
+	return b.Bytes(), nil
+}
+
+func (uc *regUseCase) GetSoloPlayersList() string {
+	players, err := uc.playerRepo.GetSoloPlayers()
+	if err != nil || len(players) == 0 {
+		return "Соло-игроков пока нет."
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Соло-игроки (%d):\n\n", len(players)))
+	for i, p := range players {
+		sb.WriteString(fmt.Sprintf("%d. %s (@%s) — %s\n", i+1, p.GameNickname, p.TelegramUsername, p.MainRole))
+	}
+	return sb.String()
 }

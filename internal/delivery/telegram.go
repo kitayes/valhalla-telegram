@@ -93,6 +93,8 @@ func (h *TelegramHandler) Start() {
 					"/list_teams - Краткий список и кол-во\n" +
 					"/check_team [Название] - Детальный состав\n" +
 					"/export - CSV файл\n" +
+					"/list_solo - Список соло-игроков\n" +
+					"/export_solo - CSV соло-игроков\n\n" +
 					"/broadcast [текст] - Рассылка\n" +
 					"/set_tourney [дата] - Установить время\n" +
 					"/close_reg / /open_reg - Регистрация\n" +
@@ -125,6 +127,22 @@ func (h *TelegramHandler) Start() {
 						t.Format(layout),
 						t.Add(-30*time.Minute).Format("15:04"),
 						t.Add(10*time.Minute).Format("15:04")), "empty")
+				}
+				continue
+			}
+
+			if text == "/list_solo" {
+				h.sendMessage(chatID, h.useCase.GetSoloPlayersList(), "empty")
+				continue
+			}
+
+			if text == "/export_solo" {
+				data, err := h.useCase.GenerateSoloPlayersCSV()
+				if err != nil {
+					h.sendMessage(chatID, "Ошибка: "+err.Error(), "empty")
+				} else {
+					file := tgbotapi.FileBytes{Name: "solo_players.csv", Bytes: data}
+					h.bot.Send(tgbotapi.NewDocument(chatID, file))
 				}
 				continue
 			}

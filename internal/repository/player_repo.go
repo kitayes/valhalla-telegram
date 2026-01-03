@@ -22,6 +22,8 @@ type PlayerRepository interface {
 	GetAllCaptains() ([]domain.Player, error)
 
 	UpdatePlayerField(playerID uint, column string, value interface{}) error
+
+	GetSoloPlayers() ([]domain.Player, error)
 }
 
 type playerRepo struct {
@@ -85,4 +87,10 @@ func (r *playerRepo) GetAllCaptains() ([]domain.Player, error) {
 
 func (r *playerRepo) UpdatePlayerField(playerID uint, column string, value interface{}) error {
 	return r.db.Model(&domain.Player{}).Where("id = ?", playerID).Update(column, value).Error
+}
+
+func (r *playerRepo) GetSoloPlayers() ([]domain.Player, error) {
+	var players []domain.Player
+	err := r.db.Where("team_id IS NULL AND main_role != ?", "").Find(&players).Error
+	return players, err
 }
