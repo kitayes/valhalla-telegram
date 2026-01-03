@@ -230,6 +230,15 @@ func (h *TelegramHandler) sendMessage(chatID int64, text string, kbType string) 
 	msg := tgbotapi.NewMessage(chatID, text)
 
 	switch kbType {
+	case "skip":
+		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Пропустить"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Отмена"),
+			),
+		)
 	case "role":
 		msg.ReplyMarkup = tgbotapi.NewReplyKeyboard(
 			tgbotapi.NewKeyboardButtonRow(

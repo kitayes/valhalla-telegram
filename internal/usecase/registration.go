@@ -15,6 +15,7 @@ const (
 	KbNone   = "empty"
 	KbCancel = "cancel"
 	KbRole   = "role"
+	KbSkip   = "skip"
 )
 
 type RegistrationUseCase interface {
@@ -133,6 +134,17 @@ func (uc *regUseCase) handleTeamLoop(captain *domain.Player, input string) (stri
 	captainID := *captain.TelegramID
 	isCapSlot := slot == 1
 
+	if (input == "Пропустить" || input == "/skip") && slot >= 6 && step == "nick" {
+		if slot < 7 {
+			next := slot + 1
+			uc.playerRepo.UpdateState(captainID, fmt.Sprintf("team_reg_nick_%d", next))
+			return fmt.Sprintf("Игрок №%d пропущен.\n\n--- Игрок №%d (ЗАМЕНА) ---\nВведите Ник:", slot, next), KbSkip
+		} else {
+			uc.playerRepo.UpdateState(captainID, domain.StateIdle)
+			return "Регистрация завершена! Команда укомплектована.", KbNone
+		}
+	}
+
 	switch step {
 	case "nick":
 		if isCapSlot {
@@ -191,11 +203,19 @@ func (uc *regUseCase) handleTeamLoop(captain *domain.Player, input string) (stri
 		if slot < 7 {
 			next := slot + 1
 			uc.playerRepo.UpdateState(captainID, fmt.Sprintf("team_reg_nick_%d", next))
-			return fmt.Sprintf("✅ Игрок %d готов.\n\n--- Игрок №%d ---\nВведите Ник:", slot, next), KbCancel
+
+			msg := fmt.Sprintf("✅ Игрок %d готов.\n\n--- Игрок №%d ---\nВведите Ник:", slot, next)
+
+			if next >= 6 {
+				return msg, KbSkip
+			}
+			return msg, KbCancel
 		}
+
 		uc.playerRepo.UpdateState(captainID, domain.StateIdle)
-		return "Регистрация команды завершена!", KbNone
+		return "🎉 Регистрация всей команды завершена!", KbNone
 	}
+
 	return "Ошибка.", KbNone
 }
 
